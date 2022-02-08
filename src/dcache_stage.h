@@ -86,7 +86,7 @@ extern Dcache_Stage* dc;
 
 /**************************************************************************************/
 /* Prototypes */
-
+void shadow_cache_stat(Addr fa_line_addr, Dcache_Data* fa_line, Op* op);
 void set_dcache_stage(Dcache_Stage*);
 void init_dcache_stage(uns8, const char*);
 void reset_dcache_stage(void);

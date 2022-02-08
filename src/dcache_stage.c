@@ -62,6 +62,33 @@
 /* Global Variables */
 
 Dcache_Stage* dc = NULL;
+Hash_Table* fa_hash = NULL;
+Cache* fa_cache;
+
+void shadow_cache_stat(Addr fa_line_addr, Dcache_Data* fa_line, Op* op) {
+  /* hash_table_access_create: access the hash table.  Return the data
+   pointer if it hits an existing entry.  Otherwise, allocate a new
+   entry and return its data pointer. */
+  Flag new_entry;
+  // doesn't really matter what to store in the hashmap
+  hash_table_access_create(fa_hash, fa_line_addr, &new_entry);
+  if (new_entry == TRUE) {
+    // Compulsory, because hashmap creates a new entry
+    STAT_EVENT(op->proc_id, DCACHE_MISS_COMPULSORY);
+  } else if (new_entry == FALSE) {
+    // Two other catagories, since hashmap has seen it before
+    if (fa_line) {
+      // Conflict, because this miss did not happen in fa_cache
+      STAT_EVENT(op->proc_id, DCACHE_MISS_CONFLICT);
+    } else {
+      // Capacity, because this miss also happened in fa_cache
+      STAT_EVENT(op->proc_id, DCACHE_MISS_CAPACITY);
+    }
+  } else {
+    // This should not happen
+    printf("warn: this should not happenx\n");
+  }
+}
 
 /**************************************************************************************/
 /* set_dcache_stage: */
@@ -92,6 +119,13 @@ void init_dcache_stage(uns8 proc_id, const char* name) {
   /* initialize the cache structure */
   init_cache(&dc->dcache, "DCACHE", DCACHE_SIZE, DCACHE_ASSOC, DCACHE_LINE_SIZE,
              sizeof(Dcache_Data), DCACHE_REPL);
+
+  fa_cache = (Cache*)malloc(sizeof(Cache));
+  init_cache(fa_cache, "", DCACHE_SIZE, DCACHE_SIZE / DCACHE_LINE_SIZE, DCACHE_LINE_SIZE,
+             sizeof(Dcache_Data), DCACHE_REPL);
+
+  fa_hash = (Hash_Table*)malloc(sizeof(Hash_Table));
+  init_hash_table(fa_hash, "", 1 << 24, 64);
 
   reset_dcache_stage();
 
@@ -156,10 +190,12 @@ void debug_dcache_stage() {
 /* update_dcache_stage: */
 void update_dcache_stage(Stage_Data* src_sd) {
   Dcache_Data* line;
+  Dcache_Data* fa_line;
   Counter      oldest_op_num, last_oldest_op_num;
   uns          oldest_index;
   int          start_op_count;
   Addr         line_addr;
+  Addr         fa_line_addr;
   uns          ii, jj;
 
   // {{{ phase 1 - move ops into the dcache stage
@@ -286,6 +322,14 @@ void update_dcache_stage(Stage_Data* src_sd) {
 
     line = (Dcache_Data*)cache_access(&dc->dcache, op->oracle_info.va,
                                       &line_addr, TRUE);
+
+    fa_line = (Dcache_Data*)cache_access(fa_cache, op->oracle_info.va,
+                                      &fa_line_addr, TRUE);
+    // should equal, because va & line size are the same
+    if (fa_line_addr != line_addr) {
+      printf("warn: line addr does not equalx\n");
+    }
+
     op->dcache_cycle = cycle_count;
     dc->idle_cycle   = MAX2(dc->idle_cycle, cycle_count + DCACHE_CYCLES);
 
@@ -426,6 +470,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
           }
 
           if(!op->off_path) {
+            shadow_cache_stat(fa_line_addr, fa_line, op);
             STAT_EVENT(op->proc_id, DCACHE_MISS);
             STAT_EVENT(op->proc_id, DCACHE_MISS_ONPATH);
             STAT_EVENT(op->proc_id, DCACHE_MISS_LD_ONPATH);
@@ -481,6 +526,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
           }
 
           if(!op->off_path) {
+            shadow_cache_stat(fa_line_addr, fa_line, op);
             STAT_EVENT(op->proc_id, DCACHE_MISS);
             STAT_EVENT(op->proc_id, DCACHE_MISS_ONPATH);
             STAT_EVENT(op->proc_id, DCACHE_MISS_LD_ONPATH);
@@ -539,6 +585,7 @@ void update_dcache_stage(Stage_Data* src_sd) {
           }
 
           if(!op->off_path) {
+            shadow_cache_stat(fa_line_addr, fa_line, op);
             STAT_EVENT(op->proc_id, DCACHE_MISS);
             STAT_EVENT(op->proc_id, DCACHE_MISS_ONPATH);
             STAT_EVENT(op->proc_id, DCACHE_MISS_ST_ONPATH);
@@ -592,7 +639,10 @@ Flag dcache_fill_line(Mem_Req* req) {
   uns bank = req->addr >> dc->dcache.shift_bits &
              N_BIT_MASK(LOG2(DCACHE_BANKS));
   Dcache_Data* data;
+  Dcache_Data* fa_data;
+  Dcache_Data* fa_line;
   Addr         line_addr, repl_line_addr;
+  Addr fa_line_addr;
   Op*          op;
   Op**         op_p  = (Op**)list_start_head_traversal(&req->op_ptrs);
   Counter* op_unique = (Counter*)list_start_head_traversal(&req->op_uniques);
@@ -674,6 +724,15 @@ Flag dcache_fill_line(Mem_Req* req) {
 
     data = (Dcache_Data*)cache_insert(&dc->dcache, dc->proc_id, req->addr,
                                       &line_addr, &repl_line_addr);
+
+    fa_line = (Dcache_Data*)cache_access(fa_cache, req->addr,
+                                  &fa_line_addr, TRUE);
+    if (fa_line == NULL) {
+      // only insert when NULL, i.e., a cache miss
+      // note that two vars are reused, but they are never used thereafter
+      fa_data = (Dcache_Data*)cache_insert(fa_cache, dc->proc_id, req->addr,
+                                  &line_addr, &repl_line_addr);
+    }
     DEBUG(dc->proc_id,
           "Filling dcache  off_path:%d addr:0x%s  :%7d index:%7d op_count:%d "
           "oldest:%lld\n",
