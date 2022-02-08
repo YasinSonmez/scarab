@@ -23,7 +23,7 @@ if not path.exists(binPath):
 
     
 data = []
-with open(traceDir + '/bin/modules.log', 'r') as infile:
+with open(traceDir + '/raw/modules.log', 'r') as infile:
     separator = ', '
     first = 1
     col = 99
@@ -41,7 +41,7 @@ with open(traceDir + '/bin/modules.log', 'r') as infile:
                 if ss[3] == '5':
                     col = 8
                 #earlier versions
-                elif ss[3] < 5:
+                elif ss[3] < '5':
                     col = 7
                 else:
                     print('new file format, please add support')
@@ -61,7 +61,7 @@ with open(traceDir + '/bin/modules.log', 'r') as infile:
         
         data.append(separator.join(s))
     
-with open(traceDir + '/bin/modules.log', 'w') as outfile:
+with open(traceDir + '/raw/modules.log', 'w') as outfile:
     for wline in data:
         outfile.write(wline)
 
