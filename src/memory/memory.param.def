@@ -126,6 +126,10 @@ DEF_PARAM(dcache_repl_pref_thresh, DCACHE_REPL_PREF_THRESH, uns, uns, 1, )
 DEF_PARAM(mem_ooo_stores, MEM_OOO_STORES, Flag, Flag, TRUE, )
 DEF_PARAM(mem_obey_store_dep, MEM_OBEY_STORE_DEP, Flag, Flag, TRUE, )
 
+/* L0 victim cache */
+DEF_PARAM(victim_cache_enable, VICTIM_CACHE_ENABLE, Flag, Flag, FALSE, )
+DEF_PARAM(victim_cache_assoc, VICTIM_CACHE_ASSOC, uns, uns, 5, )
+
 /* params for prefetching*/
 DEF_PARAM(pref_insert_lru, PREF_INSERT_LRU, Flag, Flag, FALSE, )
 DEF_PARAM(pref_insert_middle, PREF_INSERT_MIDDLE, Flag, Flag, FALSE, )

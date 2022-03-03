@@ -64,6 +64,7 @@
 Dcache_Stage* dc = NULL;
 Hash_Table* fa_hash = NULL;
 Cache* fa_cache;
+Cache* victim_cache;
 
 void shadow_cache_stat(Addr fa_line_addr, Dcache_Data* fa_line, Op* op) {
   /* hash_table_access_create: access the hash table.  Return the data
@@ -122,6 +123,11 @@ void init_dcache_stage(uns8 proc_id, const char* name) {
 
   fa_cache = (Cache*)malloc(sizeof(Cache));
   init_cache(fa_cache, "", DCACHE_SIZE, DCACHE_SIZE / DCACHE_LINE_SIZE, DCACHE_LINE_SIZE,
+             sizeof(Dcache_Data), DCACHE_REPL);
+
+  // init victim. TODO: should parameterize later.
+  victim_cache = (Cache*)malloc(sizeof(Cache));
+  init_cache(victim_cache, "", VICTIM_CACHE_ASSOC * DCACHE_LINE_SIZE, VICTIM_CACHE_ASSOC, DCACHE_LINE_SIZE,
              sizeof(Dcache_Data), DCACHE_REPL);
 
   fa_hash = (Hash_Table*)malloc(sizeof(Hash_Table));
@@ -191,11 +197,13 @@ void debug_dcache_stage() {
 void update_dcache_stage(Stage_Data* src_sd) {
   Dcache_Data* line;
   Dcache_Data* fa_line;
+  Dcache_Data* victim_line;
   Counter      oldest_op_num, last_oldest_op_num;
   uns          oldest_index;
   int          start_op_count;
   Addr         line_addr;
   Addr         fa_line_addr;
+  Addr         victim_line_addr;
   uns          ii, jj;
 
   // {{{ phase 1 - move ops into the dcache stage
@@ -325,6 +333,9 @@ void update_dcache_stage(Stage_Data* src_sd) {
 
     fa_line = (Dcache_Data*)cache_access(fa_cache, op->oracle_info.va,
                                       &fa_line_addr, TRUE);
+
+    victim_line = (Dcache_Data*)cache_access(victim_cache, op->oracle_info.va,
+                                      &victim_line_addr, TRUE);
     // should equal, because va & line size are the same
     if (fa_line_addr != line_addr) {
       printf("warn: line addr does not equalx\n");
@@ -434,6 +445,66 @@ void update_dcache_stage(Stage_Data* src_sd) {
           op->wake_cycle = cycle_count + DCACHE_CYCLES +
                            op->inst_info->extra_ld_latency;
           wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+        } else if (VICTIM_CACHE_ENABLE && victim_line) {
+          // TOxDO: how is data returned? I don't see where we explicitly returned the requested data.
+          // How does they know we have a victim here? or it does not care, just simulating the lookup & overheads
+
+          // TOxDO: why only check buffer/victim for load request? below we have PF WH ST, where misses also happens.
+          // not familiar with WH and PF. PF seems to operate on a prefetch cache, not dcache. I dont know how they intereact.
+          // I think ST should lookup victim cache. 
+
+
+          // check if victim hit
+
+          //if hit in victim
+
+          // insert dcache, invalidate victim, insert victim
+
+          // TOxDO: what about competition stuff here?
+          // in dcache_fill_line, if there are no write port, will fail.
+          // should we fail here?  ---> should we use dcache_dill_line api or manually swap.
+          // api: arguments don't fit
+          // manual swap:
+
+          Dcache_Data victim_copy = *victim_line;
+          cache_invalidate(victim_cache, op->oracle_info.va, &victim_line_addr);
+
+          // TOxDO: how to gracefully handle this?
+          // may need to group into a function stuff? because duplicate logic in dcache_dill_line
+          Flag repl_line_valid;
+          // useless placeholder
+          Addr line_addr, repl_line_addr;
+          Dcache_Data* dcache_evict = (Dcache_Data*)get_next_repl_line(&dc->dcache, dc->proc_id, op->oracle_info.va,
+                                                  &repl_line_addr, &repl_line_valid);
+          if (repl_line_valid) {
+            victim_line = (Dcache_Data*)cache_insert(victim_cache, dc->proc_id, repl_line_addr/*op->oracle_info.va*/, //TODO: fix bug. is there enough info?
+                                            &line_addr, &repl_line_addr);
+            *victim_line = *dcache_evict;
+          }
+
+          Dcache_Data* dcache_insert = (Dcache_Data*)cache_insert(&dc->dcache, dc->proc_id, op->oracle_info.va,
+                                            &line_addr, &repl_line_addr);
+          *dcache_insert = victim_copy;
+
+          // increment statistics
+          STAT_EVENT(op->proc_id, VICTIM_CACHE_HIT);
+
+          // TODO: not sure about these values, why add one more? wrt the previous, I think ther should add distinct cost
+          // insider hit or outside hit (is it caused by access)?
+          op->done_cycle = cycle_count + DCACHE_CYCLES +
+                           op->inst_info->extra_ld_latency + 1;
+          op->wake_cycle = cycle_count + DCACHE_CYCLES +
+                           op->inst_info->extra_ld_latency + 1;
+
+
+                           //load data depend, wake,
+                           // store done cycle.
+
+                           // looking what's done for a dache
+          wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+
+          // TODO:
+          // if prefetch on, need to rewirte lab3? shadow prefetch not implemented.
         } else if(((model->mem == MODEL_MEM) &&
                    new_mem_req(
                      MRT_DFETCH, dc->proc_id, line_addr, DCACHE_LINE_SIZE,
@@ -553,8 +624,33 @@ void update_dcache_stage(Stage_Data* src_sd) {
         }
       } else {  // store request
         ASSERT(dc->proc_id, op->table_info->mem_type == MEM_ST);
+        if (VICTIM_CACHE_ENABLE && victim_line) {
+          Dcache_Data victim_copy = *victim_line;
+          cache_invalidate(victim_cache, op->oracle_info.va, &victim_line_addr);
 
-        if(((model->mem == MODEL_MEM) &&
+          Flag repl_line_valid;
+          Addr line_addr, repl_line_addr;
+          Dcache_Data* dcache_evict = (Dcache_Data*)get_next_repl_line(&dc->dcache, dc->proc_id, op->oracle_info.va,
+                                                  &repl_line_addr, &repl_line_valid);
+          if (repl_line_valid) {
+            victim_line = (Dcache_Data*)cache_insert(victim_cache, dc->proc_id, repl_line_addr/*op->oracle_info.va*/, //TODO: fix bug. is there enough info?
+                                            &line_addr, &repl_line_addr);
+            *victim_line = *dcache_evict;
+          }
+
+          Dcache_Data* dcache_insert = (Dcache_Data*)cache_insert(&dc->dcache, dc->proc_id, op->oracle_info.va,
+                                            &line_addr, &repl_line_addr);
+          *dcache_insert = victim_copy;
+
+          STAT_EVENT(op->proc_id, VICTIM_CACHE_HIT);
+
+          op->done_cycle = cycle_count + DCACHE_CYCLES +
+                           op->inst_info->extra_ld_latency + 1;
+          // op->wake_cycle = cycle_count + DCACHE_CYCLES +
+          //                  op->inst_info->extra_ld_latency + 1;
+
+          // wake_up_ops(op, REG_DATA_DEP, model->wake_hook);
+        } else if(((model->mem == MODEL_MEM) &&
             new_mem_req(MRT_DSTORE, dc->proc_id, line_addr, DCACHE_LINE_SIZE,
                         DCACHE_CYCLES - 1 + op->inst_info->extra_ld_latency, op,
                         dcache_fill_line, op->unique_num, 0))) {
@@ -684,8 +780,56 @@ Flag dcache_fill_line(Mem_Req* req) {
     Flag repl_line_valid;
     data = (Dcache_Data*)get_next_repl_line(&dc->dcache, dc->proc_id, req->addr,
                                             &repl_line_addr, &repl_line_valid);
-    if(repl_line_valid && data->dirty) {
-      /* need to do a write-back */
+    // if the insertion causes eviction
+    if (repl_line_valid && VICTIM_CACHE_ENABLE) {
+      Addr repl_line_addr_copy = repl_line_addr;
+      Dcache_Data data_copy = *data;
+      // before victim insertion, if victim also will evict, dirty write back
+      data = (Dcache_Data*)get_next_repl_line(victim_cache, dc->proc_id, repl_line_addr_copy /*req->addr*/,
+                                            &repl_line_addr, &repl_line_valid);
+      if (repl_line_valid && data->dirty) {
+        // copied from below
+        // need to do a write-back
+        uns repl_proc_id = get_proc_id_from_cmp_addr(repl_line_addr);
+        DEBUG(dc->proc_id, "Scheduling writeback of addr:0x%s\n",
+              hexstr64s(repl_line_addr));
+        ASSERT(dc->proc_id, data->read_count[0] || data->read_count[1] ||
+                              data->write_count[0] || data->write_count[1]);
+
+        ASSERT(dc->proc_id,
+              repl_line_addr || data->fetched_by_offpath || data->HW_prefetched);
+        if(!new_mem_dc_wb_req(MRT_WB, repl_proc_id, repl_line_addr,
+                              DCACHE_LINE_SIZE, 1, NULL, NULL, unique_count,
+                              TRUE)) {
+          // This is a hack to get around a deadlock issue. It doesn't completely
+          // eliminate the deadlock, but makes it less likely...The deadlock
+          // occurs when all the mem_req buffers are used, and all pending
+          // mem_reqs need to fill the dcache, but the highest priority dcache
+          // fill ends up evicting a dirty line from the dcache, which then needs
+          // to be written back to L1/MLC. This dcache fill will aquire a write
+          // port via get_write_port(), but then fail here, because there are no
+          // more mem_req buffers available for dc wb req, and new_mem_dc_wb_req()
+          // will return FALSE. If we don't release the write port, then all other
+          // mem_reqs, which still need to fill the dcache, will fail, and we end
+          // up in a deadlock. So instead, we release the write port below.
+          // HOWEVER, a deadlock is still possible if all pending mem_reqs fill
+          // the dcache and all end up evicting a dirty line
+          ASSERT(dc->proc_id, 0 < dc->ports[bank].write_ports_in_use);
+          dc->ports[bank].write_ports_in_use--;
+          ASSERT(dc->proc_id,
+                dc->ports[bank].write_ports_in_use < dc->ports->num_write_ports);
+
+          cycle_count = old_cycle_count;
+          return FAILURE;
+        }
+        STAT_EVENT(dc->proc_id, DCACHE_WB_REQ_DIRTY);
+        STAT_EVENT(dc->proc_id, DCACHE_WB_REQ);
+      }
+      // now we can insert the data to be evicted into victim cache
+      Dcache_Data* victim_data = (Dcache_Data*)cache_insert(victim_cache, dc->proc_id, repl_line_addr_copy,
+                                      &line_addr, &repl_line_addr);
+      *victim_data = data_copy;
+    } else if(repl_line_valid && data->dirty) {
       uns repl_proc_id = get_proc_id_from_cmp_addr(repl_line_addr);
       DEBUG(dc->proc_id, "Scheduling writeback of addr:0x%s\n",
             hexstr64s(repl_line_addr));
