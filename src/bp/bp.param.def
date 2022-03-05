@@ -62,6 +62,10 @@ DEF_PARAM(  update_bp_off_path        , UPDATE_BP_OFF_PATH        , Flag    , Fl
 DEF_PARAM(  bp_update_at_retire       , BP_UPDATE_AT_RETIRE       , Flag    , Flag       , FALSE      ,        )
 
 // conditional branch predictor
+DEF_PARAM(  bp_perceptron_hist_length , BP_PERCEPTRON_HIST_LENGTH , uns     , uns        , 32         ,        )
+DEF_PARAM(  bp_perceptron_table_size  , BP_PERCEPTRON_TABLE_SIZE  , uns     , uns        , 256        ,        )
+DEF_PARAM(  bp_perceptron_threshold   , BP_PERCEPTRON_THRESHOLD   , uns     , uns        , 44         ,        )
+
 DEF_PARAM(  bp_mech                   , BP_MECH                   , uns     , bp_mech    , 0          ,        )
 DEF_PARAM(  late_bp_mech              , LATE_BP_MECH              , uns     , bp_mech    , NUM_BP     ,        )
 DEF_PARAM(  late_bp_latency           , LATE_BP_LATENCY           , uns     , uns        , 5          ,        )
