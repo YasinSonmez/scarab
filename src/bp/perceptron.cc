@@ -36,14 +36,30 @@ extern "C" {
 }
 
 #define DEBUG(proc_id, args...) _DEBUG(proc_id, DEBUG_BP_DIR, ##args)
+// (experimental) optimal threshold: a function of the history length
+#define BP_PERCEPTRON_THRESHOLD (int32)(1.93 * (BP_PERCEPTRON_HIST_LENGTH) + 14))
 
 namespace {
+
+struct Entry {
+  std::vector<int> perceptron;
+  Addr tag;
+
+  void reset_perceptron() {
+    std::fill(perceptron.begin(), perceptron.end(), 0);
+  }
+
+  void set_tag(Addr addr) {
+    tag = addr;
+  }
+};
 
 struct Perceptron_State {
   // 1-dimension size is the amount of branch in flight
   // 2-dimension size is the number of previous branches that is considered
   // "per-address perceptron table" yo what's up!
-  std::vector<std::vector<int> > ppt;
+  // std::vector<std::vector<int> > ppt;
+  std::vector<Entry> ppt;
   // TODO: if no branch aliasing
   std::map<Addr, std::vector<int> > full_ppt;
 };
@@ -96,10 +112,12 @@ void bp_perceptron_init() {
     // TODO: the init value
     // TODO: the macro table size
     perceptron_state.ppt.resize(BP_PERCEPTRON_TABLE_SIZE);
-    for(auto& perceptron : perceptron_state.ppt) {
+    // for(auto& perceptron : perceptron_state.ppt) {
+    for(auto& entry : perceptron_state.ppt) {
       // TODO: parameterize
       // add 1 for the branch itself
-      perceptron.resize(BP_PERCEPTRON_HIST_LENGTH + 1, 0);
+      entry.perceptron.resize(BP_PERCEPTRON_HIST_LENGTH + 1, 0);
+      entry.tag = 0;
     }
   }
 }
@@ -107,12 +125,20 @@ void bp_perceptron_init() {
 uns8 bp_perceptron_pred(Op* op) {
   const uns   proc_id      = op->proc_id;
   // TODO: this const sus
-  const auto& perceptron_state = perceptron_state_all_cores.at(proc_id);
-
+  // const auto& perceptron_state = perceptron_state_all_cores.at(proc_id);
+  auto&       perceptron_state = perceptron_state_all_cores.at(proc_id);
   const Addr  addr      = op->oracle_info.pred_addr;
   const uns32 hist      = op->oracle_info.pred_global_hist;
   const uns32 ppt_index = get_ppt_index(addr);
-  const std::vector<int>& perceptron = perceptron_state.ppt[ppt_index];
+  // const std::vector<int>& perceptron = perceptron_state.ppt[ppt_index];
+  // non-const
+  Entry& entry = perceptron_state.ppt[ppt_index];
+  const std::vector<int>& perceptron = entry.perceptron;
+
+  // if (addr != entry.tag) {
+  //   entry.set_tag(addr);
+  //   entry.reset_perceptron();
+  // }
 
   // y
   const int weighted_sum = dot_product(hist, perceptron);
@@ -138,8 +164,11 @@ void bp_perceptron_update(Op* op) {
   const Addr  addr         = op->oracle_info.pred_addr;
   const uns32 hist         = op->oracle_info.pred_global_hist;
   const uns32 ppt_index    = get_ppt_index(addr);
-  std::vector<int>& perceptron = perceptron_state.ppt[ppt_index];
+  // std::vector<int>& perceptron = perceptron_state.ppt[ppt_index];
+  Entry& entry = perceptron_state.ppt[ppt_index];
+  std::vector<int>& perceptron = entry.perceptron;
 
+  // TODO: has the history already shifted in?
   const int weighted_sum   = dot_product(hist, perceptron);
   // y_out
   int training_switch = 0;
