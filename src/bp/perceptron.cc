@@ -52,8 +52,8 @@ struct Entry {
   std::map<Addr, std::vector<int> > perceptrons;
   std::map<Addr, uns32> order;
 
-  Addr get_tag(const Addr addr) {
-    if (BP_PERCEPTRON_NO_ALIASING == FALSE) {
+  Addr get_tag(const Addr addr, bool is_shadow = false) {
+    if (BP_PERCEPTRON_NO_ALIASING == FALSE && is_shadow == false) {
       return tag;
     } else {
       // https://stackoverflow.com/questions/1409454/c-map-find-to-possibly-insert-how-to-optimize-operations
@@ -77,8 +77,8 @@ struct Entry {
     }
   }
 
-  std::vector<int>& get_perceptron(const Addr addr) {
-    if (BP_PERCEPTRON_NO_ALIASING == FALSE) {
+  std::vector<int>& get_perceptron(const Addr addr, uns associativity = BP_PERCEPTRON_TABLE_ASSOCIATIVITY, bool is_shadow = false) {
+    if (BP_PERCEPTRON_NO_ALIASING == FALSE && is_shadow == false) {
       return perceptron;
     } else {
       // https://stackoverflow.com/questions/1409454/c-map-find-to-possibly-insert-how-to-optimize-operations
@@ -86,9 +86,9 @@ struct Entry {
       it = perceptrons.find(addr);
       if (it == perceptrons.end()){
         // miss & filling
-        if (perceptrons.size() < BP_PERCEPTRON_TABLE_ASSOCIATIVITY) {
+        if (perceptrons.size() < associativity) {
           // all need to increment
-          update_order(BP_PERCEPTRON_TABLE_ASSOCIATIVITY);
+          update_order(associativity);
         } else {
           // https://stackoverflow.com/questions/9370945/finding-the-max-value-in-a-map
           // std::map<char,int>::iterator best
@@ -108,7 +108,7 @@ struct Entry {
           perceptrons.erase(to_evict->first);
           order.erase(to_evict->first);
           // all need to increment
-          update_order(BP_PERCEPTRON_TABLE_ASSOCIATIVITY);
+          update_order(associativity);
         }
         // the new
         perceptrons[addr].resize(BP_PERCEPTRON_HIST_LENGTH + 1, 0);
@@ -147,6 +147,8 @@ struct Perceptron_State {
 };
 
 std::vector<Perceptron_State> perceptron_state_all_cores;
+
+std::vector<Perceptron_State> perceptron_state_all_cores_shadow;
 
 uns32 get_ppt_index(const Addr addr) {
   // const uns32 cooked_addr = (addr >> 2) & N_BIT_MASK(HIST_LENGTH);
@@ -204,6 +206,12 @@ void bp_perceptron_init() {
       }
     }
   }
+
+  // shadow
+  perceptron_state_all_cores_shadow.resize(NUM_CORES);
+  for(auto& perceptron_state : perceptron_state_all_cores_shadow) {
+    perceptron_state.ppt.resize(1);
+  }
 }
 
 uns8 bp_perceptron_pred(Op* op) {
@@ -221,12 +229,25 @@ uns8 bp_perceptron_pred(Op* op) {
   Addr tag = entry.get_tag(addr);
   const std::vector<int>& perceptron = entry.get_perceptron(addr);
 
+
+  // get shadow
+  auto&       perceptron_state_shadow = perceptron_state_all_cores_shadow.at(proc_id);
+  Entry& entry_shadow = perceptron_state_shadow.ppt[0];
+  Addr tag_shadow = entry_shadow.get_tag(addr, true);
+  entry_shadow.get_perceptron(addr, BP_PERCEPTRON_TABLE_SIZE * BP_PERCEPTRON_TABLE_ASSOCIATIVITY, true);
+  // count miss & hit
   if (branch_compulsary_set.count(addr) == 0) {
     STAT_EVENT(proc_id, BP_PERCEPTRON_TABLE_COMPULSARY);
     entry.set_tag(addr);
     branch_compulsary_set.insert(addr);
   } else if (addr != tag) {
-    STAT_EVENT(proc_id, BP_PERCEPTRON_TABLE_CONFLICT);
+    if (addr == tag_shadow) {
+      // shadow hit -> conflict
+      STAT_EVENT(proc_id, BP_PERCEPTRON_TABLE_CONFLICT);
+    } else {
+      // shadow miss -> capacity
+      STAT_EVENT(proc_id, BP_PERCEPTRON_TABLE_CAPACITY);
+    }
     entry.set_tag(addr);
   } else {
     STAT_EVENT(proc_id, BP_PERCEPTRON_TABLE_HIT);
@@ -259,6 +280,11 @@ void bp_perceptron_update(Op* op) {
   // std::vector<int>& perceptron = perceptron_state.ppt[ppt_index];
   Entry& entry = perceptron_state.ppt[ppt_index];
   std::vector<int>& perceptron = entry.get_perceptron(addr);
+
+  // shadow
+  auto&       perceptron_state_shadow = perceptron_state_all_cores_shadow.at(proc_id);
+  Entry& entry_shadow = perceptron_state_shadow.ppt[0];
+  entry_shadow.get_perceptron(addr, BP_PERCEPTRON_TABLE_SIZE * BP_PERCEPTRON_TABLE_ASSOCIATIVITY, true);
 
   // TODO: has the history already shifted in?
   const int weighted_sum   = dot_product(hist, perceptron);
