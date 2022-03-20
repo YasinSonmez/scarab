@@ -27,6 +27,7 @@
 
 #include <vector>
 #include <map>
+#include <set>
 
 extern "C" {
 #include "bp/bp.param.h"
@@ -90,6 +91,8 @@ struct Entry {
     }
   }
 };
+
+std::set<Addr> branch_compulsary_set;
 
 struct Perceptron_State {
   // 1-dimension size is the amount of branch in flight
@@ -176,10 +179,10 @@ uns8 bp_perceptron_pred(Op* op) {
   Addr tag = entry.get_tag(addr);
   const std::vector<int>& perceptron = entry.get_perceptron(addr);
 
-  // assume 0 is the initial value
-  if (tag == 0) {
+  if (branch_compulsary_set.count(addr) == 0) {
     STAT_EVENT(proc_id, BP_PERCEPTRON_TABLE_COMPULSARY);
     entry.set_tag(addr);
+    branch_compulsary_set.insert(addr);
   } else if (addr != tag) {
     STAT_EVENT(proc_id, BP_PERCEPTRON_TABLE_CONFLICT);
     entry.set_tag(addr);
