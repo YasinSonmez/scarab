@@ -28,6 +28,7 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <algorithm>
 
 extern "C" {
 #include "bp/bp.param.h"
@@ -49,6 +50,7 @@ struct Entry {
 
   // when no aliasing
   std::map<Addr, std::vector<int> > perceptrons;
+  std::map<Addr, uns32> order;
 
   Addr get_tag(const Addr addr) {
     if (BP_PERCEPTRON_NO_ALIASING == FALSE) {
@@ -65,6 +67,16 @@ struct Entry {
     }
   }
 
+  void update_order(uns32 order_to_compare) {
+    std::map<Addr, uns32>::iterator it;
+    for (it = order.begin(); it != order.end(); it++) {
+      // increment order
+      if (it->second < order_to_compare) {
+        it->second ++;
+      }
+    }
+  }
+
   std::vector<int>& get_perceptron(const Addr addr) {
     if (BP_PERCEPTRON_NO_ALIASING == FALSE) {
       return perceptron;
@@ -73,9 +85,39 @@ struct Entry {
       std::map<Addr, std::vector<int> >::iterator it;
       it = perceptrons.find(addr);
       if (it == perceptrons.end()){
-        // when do not exist, set all weights to zere
-        // default ctor, and resize
+        // miss & filling
+        if (perceptrons.size() < BP_PERCEPTRON_TABLE_ASSOCIATIVITY) {
+          // all need to increment
+          update_order(BP_PERCEPTRON_TABLE_ASSOCIATIVITY);
+        } else {
+          // https://stackoverflow.com/questions/9370945/finding-the-max-value-in-a-map
+          // std::map<char,int>::iterator best
+          //     = std::max_element(x.begin(),x.end(),[] (const std::pair<char,int>& a, const std::pair<char,int>& b)->bool{ return a.second < b.second; } );
+          // std::cout << best->first << " , " << best->second << "\n";
+
+          // miss & filled
+          // the branch to evict
+          std::map<Addr, uns32>::iterator to_evict = std::max_element
+          (
+            order.begin(), order.end(),
+            [] (const std::pair<Addr, uns32>& a, const std::pair<Addr, uns32>& b) {
+              return a.second < b.second;
+            }
+          );
+          // evict
+          perceptrons.erase(to_evict->first);
+          order.erase(to_evict->first);
+          // all need to increment
+          update_order(BP_PERCEPTRON_TABLE_ASSOCIATIVITY);
+        }
+        // the new
         perceptrons[addr].resize(BP_PERCEPTRON_HIST_LENGTH + 1, 0);
+        order[addr] = 0;
+      } else {
+        // hit
+        // younger braches need to increment
+        update_order(order[addr]);
+        order[addr] = 0;
       }
       return perceptrons[addr];
     }
