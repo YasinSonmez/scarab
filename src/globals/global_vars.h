@@ -60,6 +60,8 @@ extern int   mystatus_fd;
 extern Flag frontend_gated;
 extern uns  num_fetched_lowconf_brs;
 
+extern Flag roi_dump_began;
+extern Counter roi_dump_ID;
 /**************************************************************************************/
 
 #endif /* #ifndef __GLOBAL_VARS_H__ */

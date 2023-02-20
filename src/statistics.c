@@ -87,6 +87,7 @@ void init_global_stats_array() {
 void gen_stat_output_file(char* buf, uns8 proc_id, Stat* stat) {
   char temp[MAX_STR_LENGTH + 1];
   char temp2[16];  // assuming proc id can not be more than 15 bytes
+  char temp3[32];
 
   /* prepend the stat tag, cut off the 'def' ending and add 'out' */
   // strncpy(temp, stat->file_name, strlen(stat->file_name) - 3);
@@ -95,6 +96,10 @@ void gen_stat_output_file(char* buf, uns8 proc_id, Stat* stat) {
   sprintf(temp2, "%u", proc_id);
   strncat(temp, temp2, MAX_STR_LENGTH);
   strncat(temp, ".out", MAX_STR_LENGTH);
+  if (roi_dump_began) {
+    sprintf(temp3, ".roi.%llu", roi_dump_ID);
+    strncat(temp, temp3, MAX_STR_LENGTH);
+  }
   strncpy(buf, OUTPUT_DIR, MAX_STR_LENGTH);
   strncat(buf, "/", MAX_STR_LENGTH);
   strncat(buf, FILE_TAG, MAX_STR_LENGTH);

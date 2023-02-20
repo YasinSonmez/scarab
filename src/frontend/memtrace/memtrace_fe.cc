@@ -63,6 +63,8 @@ uint64_t        ins_id    = 0;
 uint64_t        prior_tid = 0;
 uint64_t        prior_pid = 0;
 
+Flag roi_dump_began = FALSE;
+Counter roi_dump_ID = 0;
 /**************************************************************************************/
 /* Private Functions */
 
@@ -134,6 +136,21 @@ int roi(const xed_decoded_inst_t* ins) {
   return 0;
 }
 
+int dump_marker_type(const xed_decoded_inst_t* ins) {
+  // not caring about the actual start/end specified in the app
+  if(XED_INS_Opcode(ins) == XED_ICLASS_XCHG &&
+     XED_INS_OperandReg(ins, 0) == XED_REG_RBX &&
+     XED_INS_OperandReg(ins, 1) == XED_REG_RBX) {
+    return 1;
+  }
+  if(XED_INS_Opcode(ins) == XED_ICLASS_XCHG &&
+     XED_INS_OperandReg(ins, 0) == XED_REG_RDX &&
+     XED_INS_OperandReg(ins, 1) == XED_REG_RDX) {
+    return 2;
+  }
+  return 0;
+}
+
 int memtrace_trace_read(int proc_id, ctype_pin_inst* next_pi) {
   InstInfo* insi;
 
@@ -155,6 +172,21 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_pi) {
   apply_x87_bug_workaround(next_pi, insi->ins);
   fill_in_cf_info(next_pi, insi->ins);
   print_err_if_invalid(next_pi, insi->ins);
+
+  if (dump_marker_type(insi->ins) == 1) {
+    assert(!roi_dump_began);
+    // reset stats
+    std::cout << "Reached roi dump begin marker, reset stats" << std::endl;
+    reset_stats(TRUE);
+    roi_dump_began = TRUE;
+  } else if (dump_marker_type(insi->ins) == 2) {
+    assert(roi_dump_began);
+    // dump stats
+    std::cout << "Reached roi dump end marker, dump stats between" << std::endl;
+    dump_stats(proc_id, TRUE, global_stat_array[proc_id], NUM_GLOBAL_STATS);
+    roi_dump_began = FALSE;
+    roi_dump_ID ++;
+  }
 
   // End of ROI
   if(roi(insi->ins))
