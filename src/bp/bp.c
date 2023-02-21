@@ -608,6 +608,16 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
   // if it was a btb miss, it is time to write it into the btb
   if(op->oracle_info.btb_miss)
     bp_data->bp_btb->update_func(bp_data, op);
+  else if(op->oracle_info.ibp_miss && op->oracle_info.misfetch &&
+          (op->table_info->cf_type == CF_IBR || op->table_info->cf_type == CF_ICALL)) {
+    // hit for btb, miss for ibtb -> pred_target from btb
+    // misfetch -> need to update btb entry
+    Addr line_addr;
+    Addr * btb_entry = (Addr*)cache_access(&bp_data->btb, op->oracle_info.pred_addr, &line_addr, TRUE);
+    ASSERT(bp_data->proc_id, btb_entry);
+    ASSERT(bp_data->proc_id, *btb_entry != op->oracle_info.target);
+    *btb_entry = op->oracle_info.target;
+  }
 
   // special case updates
   switch(op->table_info->cf_type) {
