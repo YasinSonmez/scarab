@@ -47,7 +47,7 @@ void     fill_in_simd_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins,
                            uint32_t max_op_width);
 void     apply_x87_bug_workaround(ctype_pin_inst*           info,
                                   const xed_decoded_inst_t* ins);
-void     fill_in_cf_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins);
+void     fill_in_cf_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins, uint64_t memtrace_target_patch = 0);
 
 void print_err_if_invalid(ctype_pin_inst* info, const xed_decoded_inst_t* ins);
 

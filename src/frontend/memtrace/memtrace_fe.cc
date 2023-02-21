@@ -170,7 +170,7 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_pi) {
   uint32_t max_op_width = add_dependency_info(next_pi, insi->ins);
   fill_in_simd_info(next_pi, insi->ins, max_op_width);
   apply_x87_bug_workaround(next_pi, insi->ins);
-  fill_in_cf_info(next_pi, insi->ins);
+  fill_in_cf_info(next_pi, insi->ins, insi->pc + XED_INS_Size(insi->ins) + xed_operand_values_get_branch_displacement_int32(insi->ins));
   print_err_if_invalid(next_pi, insi->ins);
 
   if (dump_marker_type(insi->ins) == 1) {

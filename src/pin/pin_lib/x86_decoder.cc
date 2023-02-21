@@ -280,7 +280,7 @@ void apply_x87_bug_workaround(ctype_pin_inst*           info,
   }
 }
 
-void fill_in_cf_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
+void fill_in_cf_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins, uint64_t memtrace_target_patch /*= 0*/) {
   int category  = XED_INS_Category(ins);
   info->cf_type = NOT_CF;
 
@@ -307,6 +307,8 @@ void fill_in_cf_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
       info->cf_type = CF_CBR;
     else if(category == XED_CATEGORY_CALL)
       info->cf_type = CF_CALL;
+    if(memtrace_target_patch)
+      info->branch_target = memtrace_target_patch;
   }
 
   info->is_ifetch_barrier = is_ifetch_barrier(ins);
