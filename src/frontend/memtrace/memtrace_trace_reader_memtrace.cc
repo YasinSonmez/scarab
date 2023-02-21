@@ -300,7 +300,12 @@ void TraceReaderMemtrace::processInst(InstInfo* _info) {
   _info->pid       = mt_ref_.instr.pid;
   _info->tid       = mt_ref_.instr.tid;
   _info->target    = 0;        // Set when the next instruction is evaluated
-  _info->taken = cond_branch;  // Patched when the next instruction is evaluated
+  // Set as taken if it's a branch.
+  // Conditional branches are patched when the next instruction is evaluated.
+  xed_category_enum_t category = xed_decoded_inst_get_category(xed_ins);
+  _info->taken = category == XED_CATEGORY_UNCOND_BR ||
+                 category == XED_CATEGORY_COND_BR ||
+                 category == XED_CATEGORY_CALL;
   _info->mem_addr[0]  = 0;
   _info->mem_addr[1]  = 0;
   _info->mem_used[0]  = false;
