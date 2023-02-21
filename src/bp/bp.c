@@ -262,7 +262,7 @@ Addr bp_predict_op(Bp_Data* bp_data, Op* op, uns br_num, Addr fetch_addr) {
   ASSERT(bp_data->proc_id, op->table_info->cf_type);
 
   /* set address used to predict branch */
-  op->oracle_info.pred_addr         = addr;
+  op->oracle_info.pred_addr         = op->inst_info->addr;
   op->oracle_info.btb_miss_resolved = FALSE;
   op->cf_within_fetch               = br_num;
 
